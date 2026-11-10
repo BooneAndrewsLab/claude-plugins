@@ -39,12 +39,67 @@ SKIP_PATH_WORDS |= {p.lower() for p in os.path.expanduser("~").split(os.sep) if 
 ANON = {}   # raw project dir -> "project-N" when --anonymize is given
 
 
-def label(name):
-    if ANON:
-        return ANON.get(name, "other")
+def _plain_label(name):
     parts = [p for p in name.split("-") if p]
     kept = [p for p in parts if p.lower() not in SKIP_PATH_WORDS]
     return "-".join(kept) if kept else name
+
+
+FAMILY_MIN = 10        # a family is >= this many small project dirs sharing a name prefix
+FAMILY_PREFIX_SEGS = 3  # ... where the prefix is the first N name segments
+FAMILY_MAX_SESSIONS = 2  # "small" = at most this many sessions
+FAMILIES = set()       # prefixes found in the data by find_families()
+
+
+def find_families(per_project):
+    """Data-driven: many tiny project dirs with the same name prefix (throwaway/eval/temp runs)
+    are one family. No names are hardcoded."""
+    counts = {}
+    for raw, v in per_project.items():
+        parts = _plain_label(raw).split("-")
+        if len(parts) > FAMILY_PREFIX_SEGS and v.get("sessions", 0) <= FAMILY_MAX_SESSIONS:
+            key = "-".join(parts[:FAMILY_PREFIX_SEGS])
+            counts[key] = counts.get(key, 0) + 1
+    FAMILIES.clear()
+    FAMILIES.update(k for k, n in counts.items() if n >= FAMILY_MIN)
+
+
+def group_key(raw):
+    """Collapse noisy families into one group: data-driven families (see find_families) and
+    Claude Code's per-agent worktree dirs (<proj>-claude-worktrees-<id>)."""
+    lab = _plain_label(raw)
+    parts = lab.split("-")
+    if len(parts) > FAMILY_PREFIX_SEGS:
+        pre = "-".join(parts[:FAMILY_PREFIX_SEGS])
+        if pre in FAMILIES:
+            return pre
+    i = raw.find("-claude-worktrees-")
+    if i > 0:
+        return raw[:i] + "-claude-worktrees"
+    return raw
+
+
+def label(name):
+    g = group_key(name)
+    if ANON:
+        return ANON.get(g, "other")
+    return _plain_label(g)
+
+
+def group_projects(per_project):
+    """Merge per_project entries by group_key, summing numeric fields and counting dirs."""
+    out = {}
+    for raw, v in per_project.items():
+        g = group_key(raw)
+        if g not in out:
+            out[g] = dict(v, dirs=1)
+            continue
+        o = out[g]
+        o["dirs"] += 1
+        for k, x in v.items():
+            if isinstance(x, (int, float)) and isinstance(o.get(k), (int, float)):
+                o[k] += x
+    return out
 
 
 def usd(n):
@@ -208,6 +263,8 @@ def main():
     if not os.path.exists(IN_PATH):
         sys.exit("missing %s -- run report.py first" % IN_PATH)
     d = json.load(open(IN_PATH))
+    find_families(d["per_project"])
+    d["per_project"] = group_projects(d["per_project"])
     if "--anonymize" in sys.argv[1:] or os.environ.get("TOKEN_AUDIT_ANONYMIZE"):
         ranked = sorted(d["per_project"].items(), key=lambda kv: -kv[1]["cost"])
         ANON.update({k: "project-%d" % (i + 1) for i, (k, _) in enumerate(ranked)})
@@ -260,7 +317,7 @@ def main():
 
     projects = []
     for k, v in d["per_project"].items():
-        projects.append(dict(name=label(k), cost=round(v["cost"], 2), sessions=v["sessions"],
+        projects.append(dict(name=label(k), dirs=v.get("dirs", 1), cost=round(v["cost"], 2), sessions=v["sessions"],
                              msgs=v["msgs"], prompts=v["prompts"],
                              ratio=round(v["msgs"] / v["prompts"], 1) if v["prompts"] else None))
     projects.sort(key=lambda p: -p["cost"])

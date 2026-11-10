@@ -519,7 +519,7 @@ function renderBarList(containerId, items, opts) {
 }
 
 renderBarList("project-bars",
-  DATA.projects.slice(0, 8).map(p => ({ label: p.name, value: p.cost })),
+  DATA.projects.slice(0, 8).map(p => ({ label: p.name + (p.dirs > 1 ? " ×" + p.dirs : ""), value: p.cost })),
   { fmt: v => fmtUsd(v) });
 
 renderBarList("model-bars",

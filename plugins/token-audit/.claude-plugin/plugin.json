@@ -1,6 +1,6 @@
 {
   "name": "token-audit",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Audit your local Claude Code token usage: cost by model, project, session, cache and effort, with a self-contained HTML dashboard",
   "author": {
     "name": "Matej Usaj"
