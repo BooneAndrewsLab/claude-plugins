@@ -6,6 +6,11 @@
       "name": "usage-pacing",
       "source": "./plugins/usage-pacing",
       "description": "Soft alerts on weekly Claude quota usage vs a linear pace"
+    },
+    {
+      "name": "token-audit",
+      "source": "./plugins/token-audit",
+      "description": "Audit local Claude Code token usage and build an HTML dashboard"
     }
   ]
 }
