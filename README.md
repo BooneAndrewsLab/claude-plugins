@@ -20,11 +20,26 @@ Pieces:
 - `scripts/pace.py statusline`: reads `rate_limits.seven_day` from the statusline JSON, prints
   `wk 48% / pace 69%`, and saves state to `~/.claude/usage-pacing/state.json`. The reset time
   comes from the data, so nothing is hardcoded.
-- `hooks/hooks.json`: SessionStart + UserPromptSubmit hook injects a factual one-liner when
-  >= 8 pts over pace (or >= 20 under, at session start only), at most once per 2 h per kind.
+- `hooks/hooks.json`: SessionStart + UserPromptSubmit hook injects a factual one-liner when over
+  pace (or far under, at session start only), throttled. At session start it also refreshes stale
+  state by scraping `claude -p "/usage"` (~8 s, only if state is >30 min old), so alerts work with
+  no statusline at all, e.g. in a headless remote session. The script is copied to
+  `~/.claude/usage-pacing/pace.py` so the settings.json entry survives plugin updates.
 - `skills/usage-pacing`: wording rules + `/usage-pacing` on demand (`--fable` adds the Fable pool,
-  scraped from `claude -p "/usage"`, since the statusline JSON has no per-model figures).
-  Falls back to that scrape when no fresh state exists; fails soft, never invents a number.
+  scraped from `/usage`, since the statusline JSON has no per-model figures). Fails soft, never
+  invents a number.
+
+Options (`/plugin configure usage-pacing@boonelab-plugins`, or `/config`):
+
+| Option | Values | Default |
+|---|---|---|
+| `display` | `statusline` (show `wk N% / pace M%`) / `silent` (track, draw nothing) | `statusline` |
+| `alert_channel` | `context` (Claude relays a line in chat; also shows in remote/web sessions) / `push` (also asks Claude for a mobile push; needs Remote Control + push enabled in `/config`) / `none` | `context` |
+| `over_pts` / `under_pts` | alert thresholds in percentage points | 8 / 20 |
+| `throttle_hours` | min gap between alerts of one kind | 2 |
+
+The statusline is terminal-only (it does not render in the web/mobile clients); `context`/`push`
+alerts are how remote sessions hear about it.
 
 Install, then wire the statusline (plugins cannot set `statusLine` themselves):
 
@@ -33,4 +48,4 @@ Install, then wire the statusline (plugins cannot set `statusLine` themselves):
     /usage-pacing setup        # adds the statusLine entry; restart Claude Code
 
 If you already have a statusLine, `setup` leaves it alone and prints the command to chain.
-The setup path points into the plugin cache; re-run it after a plugin update.
+Skip `setup` entirely if you only want chat alerts.

@@ -6,17 +6,31 @@ Modes (first argument):
   hook        stdin = hook JSON; prints hook JSON with additionalContext when off pace.
   report      prints one line from the state file (add --fable to also scrape /usage).
   scrape      one line from `claude -p /usage` only (no state needed).
-  setup       adds the statusLine entry to ~/.claude/settings.json (never overwrites).
+  setup       adds the statusLine entry to ~/.claude/settings.json (never overwrites a foreign one).
+
+Options come from the plugin's userConfig (env CLAUDE_PLUGIN_OPTION_*): display, alert_channel,
+over_pts, under_pts, throttle_hours. The statusline process cannot see them, so the SessionStart
+hook copies `display` into the state file, and copies this script to a fixed path (STABLE) so the
+settings.json statusLine entry survives plugin updates.
 """
-import json, os, re, subprocess, sys, tempfile, time
+import json, os, re, shlex, shutil, subprocess, sys, tempfile, time
 from datetime import datetime, timedelta
 
 WEEK = 7 * 86400
 STATE_DIR = os.path.expanduser("~/.claude/usage-pacing")
 STATE = os.path.join(STATE_DIR, "state.json")
-OVER_PTS, UNDER_PTS = 8, 20          # alert thresholds, percentage points
-THROTTLE_S = 2 * 3600                # min gap between injected alerts of one kind
-STALE_S = 12 * 3600                  # ignore state older than this
+STABLE = os.path.join(STATE_DIR, "pace.py")   # copy of this script, referenced from settings.json
+STALE_S = 12 * 3600                  # ignore state older than this for alerts
+REFRESH_S = 30 * 60                  # state older than this is refreshed by scraping /usage
+GUARD = "USAGE_PACING_SCRAPING"      # set for the scrape subprocess so its own hooks don't recurse
+
+
+def cfg(name, default, cast=str):
+    v = os.environ.get("CLAUDE_PLUGIN_OPTION_" + name.upper())
+    try:
+        return cast(v) if v not in (None, "") else default
+    except ValueError:
+        return default
 
 
 def pace(used, resets_at, now=None):
@@ -63,30 +77,68 @@ def mode_statusline():
     st = load_state()
     st.update(used=used, resets_at=rs, updated=time.time())
     save_state(st)
+    if st.get("config", {}).get("display", "statusline") == "silent":
+        return                       # state is still written; nothing is drawn
     t, d, _ = pace(used, rs)
     print(f"wk {used:.0f}% / pace {t:.0f}%")
 
 
+def sync(st):
+    """SessionStart housekeeping: stable script copy + config for the statusline process."""
+    try:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        src = os.path.abspath(__file__)
+        if os.path.abspath(STABLE) != src:
+            shutil.copyfile(src, STABLE)
+    except OSError:
+        pass
+    st["config"] = {"display": cfg("display", "statusline")}
+
+
+def refresh(st):
+    """Scrape `claude -p /usage` into the state when it is stale (no statusline running)."""
+    now = time.time()
+    fresh = now - st.get("updated", 0) <= REFRESH_S and st.get("resets_at", 0) > now
+    if fresh or now - st.get("scrape_failed", 0) < REFRESH_S:
+        return
+    try:
+        u = parse_usage(usage_text(30))
+    except Exception:
+        u = {}
+    if "all" in u and "resets_at" in u:
+        st.update(used=u["all"], resets_at=u["resets_at"], updated=now, source="scrape")
+    else:
+        st["scrape_failed"] = now
+
+
 def mode_hook():
+    if os.environ.get(GUARD):
+        return
     try:
         ev = json.load(sys.stdin)
     except ValueError:
         return
     name = ev.get("hook_event_name", "UserPromptSubmit")
     st = load_state()
-    if not st or time.time() - st.get("updated", 0) > STALE_S:
+    if name == "SessionStart":
+        sync(st)
+        refresh(st)
+        save_state(st)
+    channel = cfg("alert_channel", "context")
+    if channel == "none" or "used" not in st or time.time() - st.get("updated", 0) > STALE_S:
         return
     if st["resets_at"] < time.time():
         return                       # window rolled over; wait for fresh numbers
+    over, under = cfg("over_pts", 8.0, float), cfg("under_pts", 20.0, float)
+    throttle = cfg("throttle_hours", 2.0, float) * 3600
     t, d, _ = pace(st["used"], st["resets_at"])
-    if d >= OVER_PTS:
+    if d >= over:
         kind = "over"
-    elif d <= -UNDER_PTS and name == "SessionStart":
+    elif d <= -under and name == "SessionStart":
         kind = "under"
     else:
         return
-    last = st.get("alerted", {}).get(kind, 0)
-    if time.time() - last < THROTTLE_S:
+    if time.time() - st.get("alerted", {}).get(kind, 0) < throttle:
         return
     st.setdefault("alerted", {})[kind] = time.time()
     save_state(st)
@@ -94,14 +146,17 @@ def mode_hook():
            + line(st["used"], st["resets_at"])
            + " Relay this to the user as one short line at the next natural breakpoint "
              "(not every turn); informational only, do not change the work plan.")
+    if channel == "push":
+        msg += (" Also send it once as a mobile push with the PushNotification tool "
+                "(status proactive, under 200 characters).")
     print(json.dumps({"hookSpecificOutput": {"hookEventName": name,
                                              "additionalContext": msg}}))
 
 
-def usage_text():
+def usage_text(timeout=90):
     d = tempfile.mkdtemp()
-    r = subprocess.run(["timeout", "90", "claude", "-p", "/usage"], cwd=d,
-                       capture_output=True, text=True)
+    r = subprocess.run(["timeout", str(timeout), "claude", "-p", "/usage"], cwd=d,
+                       capture_output=True, text=True, env={**os.environ, GUARD: "1"})
     return r.stdout
 
 
@@ -154,14 +209,18 @@ def mode_report(want_fable, scrape_only=False):
 
 def mode_setup():
     path = os.path.expanduser("~/.claude/settings.json")
-    script = os.path.abspath(__file__)
-    cmd = f"python3 {script} statusline"
+    os.makedirs(STATE_DIR, exist_ok=True)
+    src = os.path.abspath(__file__)
+    if os.path.abspath(STABLE) != src:
+        shutil.copyfile(src, STABLE)
+    cmd = f"python3 {shlex.quote(STABLE)} statusline"
     try:
         with open(path) as f:
             s = json.load(f)
     except FileNotFoundError:
         s = {}
-    if "statusLine" in s:
+    old = (s.get("statusLine") or {}).get("command", "")
+    if "statusLine" in s and "pace.py statusline" not in old:
         print("A statusLine is already configured, not touching it:\n  "
               + json.dumps(s["statusLine"]) + "\nTo add pacing, make that command also run:\n  "
               + cmd + "\n(it reads the same JSON on stdin and prints `wk N% / pace M%`).")
@@ -170,8 +229,9 @@ def mode_setup():
     with open(path, "w") as f:
         json.dump(s, f, indent=2)
         f.write("\n")
-    print(f"Added statusLine to {path}: {cmd}\nRestart Claude Code to pick it up. "
-          "Note: the path points into the plugin cache and changes when the plugin updates; re-run setup then.")
+    print(f"{'Updated' if old else 'Added'} statusLine in {path}: {cmd}\n"
+          "Restart Claude Code to pick it up. The script lives at a fixed path, so plugin updates "
+          "do not break it (the SessionStart hook keeps the copy current).")
     return 0
 
 
