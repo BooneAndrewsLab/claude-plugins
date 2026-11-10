@@ -164,6 +164,10 @@
   ol.findings .f-body { color: var(--text-secondary); font-size: 13px; }
   ol.findings .f-body b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
 
+  ol.findings .f-evidence { color: var(--muted); font-size: 12px; margin-top: 3px; }
+  .stat-line { color: var(--text-secondary); font-size: 13px; margin-top: 12px; }
+  .stat-line b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+
   /* bar list charts */
   .barlist { display: flex; flex-direction: column; gap: 8px; }
   .barrow {
@@ -309,6 +313,13 @@
     </div>
   </section>
 
+  <section id="tips-section" hidden>
+    <h2>Tips <span class="auto">computed rules that fire when thresholds in the data are crossed; not personalised advice</span></h2>
+    <div class="card">
+      <ol class="findings" id="tips"></ol>
+    </div>
+  </section>
+
   <section>
     <h2>Daily spend</h2>
     <div class="card trend-wrap">
@@ -349,6 +360,14 @@
           <div class="barlist" id="effort-bars"></div>
         </div>
       </div>
+    </div>
+  </section>
+
+  <section id="side-section" hidden>
+    <h2>Subagent cost by model, and starting context</h2>
+    <div class="card">
+      <div class="barlist" id="side-bars"></div>
+      <div class="stat-line" id="side-stats"></div>
     </div>
   </section>
 
@@ -450,6 +469,27 @@ const findingsEl = document.getElementById("findings");
   findingsEl.appendChild(li);
 });
 
+// ---- Tips (computed rules from extract.py; plain text) ----
+(function () {
+  const tips = DATA.tips || [];
+  if (!tips.length) return;
+  document.getElementById("tips-section").hidden = false;
+  const ol = document.getElementById("tips");
+  tips.forEach(f => {
+    const li = document.createElement("li");
+    const right = document.createElement("div");
+    [["f-title", f.title], ["f-body", f.body], ["f-evidence", f.evidence]].forEach(([c, txt]) => {
+      if (!txt) return;
+      const el = document.createElement("div");
+      el.className = c;
+      el.textContent = txt;
+      right.appendChild(el);
+    });
+    li.appendChild(right);
+    ol.appendChild(li);
+  });
+})();
+
 // ---- generic bar list renderer ----
 function renderBarList(containerId, items, opts) {
   opts = opts || {};
@@ -492,6 +532,19 @@ renderBarList("category-bars", [
   { label: "Output tokens", value: DATA.token_categories.output },
   { label: "Base input", value: DATA.token_categories.base_input },
 ], { fmt: v => fmtUsd(v, v < 10 ? 2 : 0) });
+
+if ((DATA.sidechain_by_model || []).length) {
+  document.getElementById("side-section").hidden = false;
+  renderBarList("side-bars", DATA.sidechain_by_model.map(m => ({ label: m.name, value: m.cost })),
+    { fmt: v => fmtUsd(v) });
+  const sc = (DATA.meta.start_context_tokens || {}), ss = DATA.meta.session_stats || {};
+  const fmtN = n => n == null ? "n/a" : Math.round(n).toLocaleString();
+  const lines = [];
+  if (sc.main && sc.main.n) lines.push("Starting context (first turn), main sessions: median <b>" + fmtN(sc.main.median) + "</b>, p90 <b>" + fmtN(sc.main.p90) + "</b> tokens (" + sc.main.n.toLocaleString() + " sessions).");
+  if (sc.sidechain && sc.sidechain.n) lines.push("Subagent starts: <b>" + sc.sidechain.n.toLocaleString() + "</b>, median <b>" + fmtN(sc.sidechain.median) + "</b>, p90 <b>" + fmtN(sc.sidechain.p90) + "</b> tokens.");
+  if (ss.longest_hours != null) lines.push("Longest session: <b>" + Math.round(ss.longest_hours) + " h</b>; sessions over 24 h: <b>" + ss.over_24h + "</b>" + (DATA.meta.total_cost ? " (" + (100 * ss.over_24h_cost / DATA.meta.total_cost).toFixed(0) + "% of cost)." : "."));
+  document.getElementById("side-stats").innerHTML = lines.map(l => "<div>" + l + "</div>").join("");
+}
 
 renderBarList("effort-bars",
   Object.entries(DATA.effort).sort((x, y) => y[1].cost - x[1].cost)
