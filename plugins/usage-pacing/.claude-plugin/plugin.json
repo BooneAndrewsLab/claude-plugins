@@ -1,0 +1,5 @@
+{
+  "name": "usage-pacing",
+  "version": "0.0.1",
+  "description": "Soft alerts on weekly Claude quota usage vs a linear pace (statusline + hook + skill). Work in progress."
+}
