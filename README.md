@@ -1,18 +1,18 @@
 # claude-plugins
 
-Private Claude Code plugin marketplace for the Boone/Andrews labs
-(marketplace name: `boonelab-plugins`; `claude-` names are reserved).
+Claude Code plugin marketplace from the Boone/Andrews labs (public, MIT).
+The marketplace is named `boonelab-plugins` (names starting with `claude-` are reserved).
 
     /plugin marketplace add BooneAndrewsLab/claude-plugins
     /plugin install usage-pacing@boonelab-plugins
+    /plugin install token-audit@boonelab-plugins
 
 ## Plugins
 
 - `usage-pacing`: weekly-quota pace alerts.
 - `token-audit`: audit your local Claude Code token usage/cost and build a self-contained HTML dashboard
   (`/token-audit`; `--anonymize` for a shareable version). Python 3 stdlib only. Costs are API-list-price
-  equivalents and do not match the weekly quota percentage. Tracking issue (private):
-  https://github.com/BooneAndrewsLab/lab-work/issues/1
+  equivalents and do not match the weekly quota percentage.
 
 ## usage-pacing
 
@@ -52,3 +52,22 @@ Install, then wire the statusline (plugins cannot set `statusLine` themselves):
 
 If you already have a statusLine, `setup` leaves it alone and prints the command to chain.
 Skip `setup` entirely if you only want chat alerts.
+
+## token-audit
+
+Run `/token-audit`: it reads your local transcripts (`~/.claude/projects/**/*.jsonl`), prices them by
+model, and writes `usage_summary.json`, `report_data.json` and a self-contained `dashboard.html` to
+`~/.claude/token-audit/` (override with `TOKEN_AUDIT_DIR`).
+
+- Costs are API-list-price equivalents from a dated pricing snapshot; unknown model IDs trigger a
+  loud warning and a banner instead of silently counting as $0. They do not match the weekly quota
+  percentage (quota is model-weighted).
+- Findings text is computed from the data.
+- `--anonymize` renames projects to `project-1`, `project-2`, ... so the dashboard can be shared
+  (`usage_summary.json` still contains raw project names; share only the dashboard).
+- Nothing is published automatically; Claude only publishes the dashboard if you ask.
+- Python 3 standard library only.
+
+## License
+
+MIT, see `LICENSE`.
