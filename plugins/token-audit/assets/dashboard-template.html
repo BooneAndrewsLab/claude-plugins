@@ -1,0 +1,592 @@
+<!doctype html>
+<title>Claude Code Usage Audit</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface: #fcfcfb;
+    --plane: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --accent: #2a78d6;
+    --accent-wash: #2a78d61a;
+    --good: #0ca30c;
+    --critical: #d03b3b;
+    --border: rgba(11, 11, 11, 0.1);
+    --row-alt: #f3f2ef;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface: #1a1a19;
+      --plane: #0d0d0d;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --muted: #898781;
+      --grid: #2c2c2a;
+      --axis: #383835;
+      --accent: #3987e5;
+      --accent-wash: #3987e526;
+      --good: #0ca30c;
+      --critical: #d03b3b;
+      --border: rgba(255, 255, 255, 0.1);
+      --row-alt: #202020;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface: #1a1a19;
+    --plane: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --accent: #3987e5;
+    --accent-wash: #3987e526;
+    --good: #0ca30c;
+    --critical: #d03b3b;
+    --border: rgba(255, 255, 255, 0.1);
+    --row-alt: #202020;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--plane);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding-inline: 20px;
+    padding-block: 28px 60px;
+  }
+
+  header.page { margin-bottom: 24px; }
+  h1 {
+    font-size: 22px;
+    font-weight: 650;
+    margin: 0 0 4px;
+    text-wrap: balance;
+    letter-spacing: -0.01em;
+  }
+  .subtitle { color: var(--text-secondary); font-size: 13.5px; max-width: 62ch; }
+  .meta-line {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 10px;
+  }
+
+  section { margin-bottom: 28px; }
+  h2 {
+    font-size: 12px;
+    font-weight: 650;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+
+  /* KPI tiles */
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+    gap: 10px;
+  }
+  .kpi {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .kpi .label { color: var(--text-secondary); font-size: 12px; margin-bottom: 6px; }
+  .kpi .value {
+    font-size: 22px;
+    font-weight: 650;
+    font-variant-numeric: proportional-nums;
+    letter-spacing: -0.01em;
+  }
+  .kpi .delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-top: 6px;
+  }
+  .kpi .delta.up-bad { color: var(--critical); }
+  .kpi .delta.good { color: var(--good); }
+  .kpi .sub { color: var(--muted); font-size: 11.5px; margin-top: 6px; }
+
+  /* Findings */
+  ol.findings {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: f;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  ol.findings li {
+    counter-increment: f;
+    display: grid;
+    grid-template-columns: 26px 1fr;
+    gap: 10px;
+  }
+  ol.findings li::before {
+    content: counter(f);
+    font-weight: 650;
+    font-size: 12px;
+    color: var(--accent);
+    background: var(--accent-wash);
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  ol.findings .f-title { font-weight: 600; margin-bottom: 2px; }
+  ol.findings .f-body { color: var(--text-secondary); font-size: 13px; }
+  ol.findings .f-body b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+
+  /* bar list charts */
+  .barlist { display: flex; flex-direction: column; gap: 8px; }
+  .barrow {
+    display: grid;
+    grid-template-columns: 130px 1fr 74px;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 6px;
+    border-radius: 6px;
+    transition: background-color 0.12s ease;
+  }
+  .barrow:hover, .barrow:focus-visible { background: var(--row-alt); }
+  .barrow .rlabel {
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .barrow .track {
+    position: relative;
+    height: 16px;
+    background: var(--grid);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .barrow .fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: var(--accent);
+    border-radius: 4px;
+    width: 0;
+  }
+  .barrow .rvalue {
+    font-size: 12.5px;
+    font-weight: 600;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 640px) {
+    .two-col { grid-template-columns: 1fr; }
+    .barrow { grid-template-columns: 96px 1fr 60px; }
+  }
+
+  /* daily trend */
+  .trend-wrap { position: relative; }
+  #trend-chart {
+    display: block;
+    width: 100%;
+    height: 180px;
+  }
+  .trend-tip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--text-primary);
+    color: var(--surface);
+    font-size: 11.5px;
+    padding: 6px 9px;
+    border-radius: 6px;
+    transform: translate(-50%, -110%);
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.1s ease;
+    z-index: 2;
+  }
+  .trend-tip .tt-val { font-weight: 650; font-variant-numeric: tabular-nums; }
+  .trend-axis-note {
+    display: flex;
+    justify-content: space-between;
+    color: var(--muted);
+    font-size: 11px;
+    margin-top: 4px;
+  }
+
+  table.sessions {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+  }
+  table.sessions th {
+    text-align: left;
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0 10px 8px;
+    border-bottom: 1px solid var(--grid);
+  }
+  table.sessions td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--grid);
+    font-variant-numeric: tabular-nums;
+  }
+  table.sessions td.tnum { text-align: right; }
+  table.sessions tr:last-child td { border-bottom: none; }
+  .table-scroll { overflow-x: auto; }
+
+  footer.notes {
+    color: var(--muted);
+    font-size: 11.5px;
+    line-height: 1.6;
+    border-top: 1px solid var(--grid);
+    padding-top: 16px;
+    margin-top: 8px;
+  }
+  footer.notes code {
+    background: var(--row-alt);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 11px;
+  }
+  .banner { margin: 10px 0; padding: 10px 14px; border-radius: 8px; font-size: 13px; border: 1px solid var(--border, #999); }
+  .banner.warn { background: #fde8e8; color: #7a1010; border-color: #c33; font-weight: 600; }
+  .banner.note { background: var(--row-alt); }
+  .auto { font-size: 11px; font-weight: 400; opacity: .7; margin-left: 8px; }
+</style>
+
+<div class="wrap">
+  <header class="page">
+    <h1>Claude Code Usage Audit</h1>
+    <div class="subtitle" id="subtitle"></div>
+    <div class="banner" id="warn-banner" hidden></div>
+    <div class="banner note" id="quota-banner"></div>
+    <div class="meta-line" id="meta-line"></div>
+  </header>
+
+  <section id="kpi-section">
+    <h2>At a glance</h2>
+    <div class="kpis" id="kpi-grid"></div>
+  </section>
+
+  <section>
+    <h2>Findings <span class="auto">computed from the data above on each run; no hand-written prose</span></h2>
+    <div class="card">
+      <ol class="findings" id="findings"></ol>
+    </div>
+  </section>
+
+  <section>
+    <h2>Daily spend</h2>
+    <div class="card trend-wrap">
+      <svg id="trend-chart" viewBox="0 0 1000 180" preserveAspectRatio="none"></svg>
+      <div class="trend-tip" id="trend-tip"><span class="tt-val"></span><br /><span class="tt-date"></span></div>
+      <div class="trend-axis-note" id="trend-axis-note"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="two-col">
+      <div>
+        <h2>Cost by project</h2>
+        <div class="card">
+          <div class="barlist" id="project-bars"></div>
+        </div>
+      </div>
+      <div>
+        <h2>Cost by model</h2>
+        <div class="card">
+          <div class="barlist" id="model-bars"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="two-col">
+      <div>
+        <h2>Cost by token category</h2>
+        <div class="card">
+          <div class="barlist" id="category-bars"></div>
+        </div>
+      </div>
+      <div>
+        <h2>Cost by reasoning effort</h2>
+        <div class="card">
+          <div class="barlist" id="effort-bars"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Most expensive single sessions</h2>
+    <div class="card table-scroll">
+      <table class="sessions" id="sessions-table">
+        <thead>
+          <tr>
+            <th>Project</th>
+            <th style="text-align:right">Est. cost</th>
+            <th style="text-align:right">Turns</th>
+            <th style="text-align:right">Duration</th>
+            <th style="text-align:right">Subagent share</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="notes" id="footnote"></footer>
+</div>
+
+<script>
+const DATA = /*__USAGE_DATA_START__*/{"__placeholder__":true}/*__USAGE_DATA_END__*/;
+
+function fmtUsd(n, decimals) {
+  decimals = decimals === undefined ? 0 : decimals;
+  return "$" + n.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+function fmtPct(n) { return n.toFixed(1) + "%"; }
+function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+// ---- header ----
+document.getElementById("subtitle").textContent =
+  "Parsed from local session transcripts across every project under ~/.claude/projects/ — " +
+  DATA.meta.active_days + " active days, " + DATA.meta.first_day + " through " + DATA.meta.last_day + ".";
+document.getElementById("meta-line").textContent =
+  DATA.meta.files_scanned + " session files · " + DATA.meta.total_msgs.toLocaleString() +
+  " assistant turns · " + DATA.meta.total_prompts.toLocaleString() + " typed prompts. " +
+  "Costs are API list-price equivalents (pricing snapshot " + DATA.meta.pricing_snapshot_date +
+  ") for comparison across projects/models, not a subscription invoice.";
+document.getElementById("quota-banner").textContent = DATA.meta.quota_note;
+const unpricedIds = Object.keys(DATA.meta.unpriced_models || {});
+if (unpricedIds.length) {
+  const w = document.getElementById("warn-banner");
+  w.className = "banner warn"; w.hidden = false;
+  w.textContent = "WARNING: no pricing for model(s) " + unpricedIds.join(", ") +
+    " — their cost is counted as $0, so every dollar figure below is understated.";
+}
+
+// ---- KPI tiles ----
+const total = DATA.meta.total_cost;
+const wowPct = DATA.prev7_cost > 0 ? ((DATA.last7_cost - DATA.prev7_cost) / DATA.prev7_cost) * 100 : null;
+const topModel = DATA.models[0] || { name: "-", cost: 0 };
+const effTotal = Object.values(DATA.effort).reduce((a, v) => a + v.cost, 0);
+const topEff = Object.entries(DATA.effort).sort((a, b) => b[1].cost - a[1].cost)[0];
+
+const kpis = [
+  { label: "Est. cost, " + DATA.meta.active_days + " active days", value: fmtUsd(total), sub: DATA.meta.total_msgs.toLocaleString() + " assistant turns" },
+  { label: "Last 7 days vs prior 7", value: fmtUsd(DATA.last7_cost),
+    delta: wowPct === null ? undefined : (wowPct >= 0 ? "+" : "") + wowPct.toFixed(0) + "%", deltaClass: "up-bad", sub: "prior 7d: " + fmtUsd(DATA.prev7_cost) },
+  { label: "Prompt-cache hit rate", value: fmtPct(DATA.cache_hit_rate), sub: "of all input-side tokens" },
+  { label: "Top model share of cost", value: fmtPct(total ? topModel.cost / total * 100 : 0), sub: topModel.name },
+  { label: topEff ? "Top effort level: " + topEff[0] : "Effort", value: topEff && effTotal ? fmtPct(topEff[1].cost / effTotal * 100) : "n/a", sub: "share of cost with recorded effort" },
+  { label: "Subagent / fork share", value: fmtPct(total ? DATA.meta.sidechain_cost / total * 100 : 0), sub: fmtUsd(DATA.meta.sidechain_cost) + " of " + fmtUsd(total) },
+];
+
+const kpiGrid = document.getElementById("kpi-grid");
+kpis.forEach(k => {
+  const el = document.createElement("div");
+  el.className = "kpi";
+  el.innerHTML =
+    '<div class="label"></div><div class="value"></div>' +
+    (k.delta ? '<div class="delta ' + k.deltaClass + '"></div>' : '') +
+    (k.sub ? '<div class="sub"></div>' : '');
+  el.querySelector(".label").textContent = k.label;
+  el.querySelector(".value").textContent = k.value;
+  if (k.delta) el.querySelector(".delta").textContent = k.delta;
+  if (k.sub) el.querySelector(".sub").textContent = k.sub;
+  kpiGrid.appendChild(el);
+});
+
+// ---- Findings (computed by extract.py; rendered as plain text) ----
+const findingsEl = document.getElementById("findings");
+(DATA.findings || []).forEach(f => {
+  const li = document.createElement("li");
+  const title = document.createElement("div");
+  title.className = "f-title";
+  title.textContent = f.title;
+  const body = document.createElement("div");
+  body.className = "f-body";
+  body.textContent = f.body;
+  const right = document.createElement("div");
+  right.appendChild(title);
+  right.appendChild(body);
+  li.appendChild(document.createElement("span"));
+  li.appendChild(right);
+  findingsEl.appendChild(li);
+});
+
+// ---- generic bar list renderer ----
+function renderBarList(containerId, items, opts) {
+  opts = opts || {};
+  const container = document.getElementById(containerId);
+  const max = Math.max(...items.map(i => i.value));
+  items.forEach(item => {
+    const row = document.createElement("div");
+    row.className = "barrow";
+    row.tabIndex = 0;
+    const label = document.createElement("div");
+    label.className = "rlabel";
+    label.textContent = item.label;
+    const track = document.createElement("div");
+    track.className = "track";
+    const fill = document.createElement("div");
+    fill.className = "fill";
+    track.appendChild(fill);
+    const value = document.createElement("div");
+    value.className = "rvalue";
+    value.textContent = opts.fmt ? opts.fmt(item.value) : item.value;
+    row.appendChild(label);
+    row.appendChild(track);
+    row.appendChild(value);
+    container.appendChild(row);
+    requestAnimationFrame(() => { fill.style.width = ((item.value / max) * 100).toFixed(1) + "%"; });
+  });
+}
+
+renderBarList("project-bars",
+  DATA.projects.slice(0, 8).map(p => ({ label: p.name, value: p.cost })),
+  { fmt: v => fmtUsd(v) });
+
+renderBarList("model-bars",
+  DATA.models.map(m => ({ label: m.name, value: m.cost })),
+  { fmt: v => fmtUsd(v) });
+
+renderBarList("category-bars", [
+  { label: "Cache reads", value: DATA.token_categories.cache_read },
+  { label: "Cache writes", value: DATA.token_categories.cache_write },
+  { label: "Output tokens", value: DATA.token_categories.output },
+  { label: "Base input", value: DATA.token_categories.base_input },
+], { fmt: v => fmtUsd(v, v < 10 ? 2 : 0) });
+
+renderBarList("effort-bars",
+  Object.entries(DATA.effort).sort((x, y) => y[1].cost - x[1].cost)
+    .map(([k, v]) => ({ label: k.charAt(0).toUpperCase() + k.slice(1), value: v.cost })),
+  { fmt: v => fmtUsd(v) });
+
+// ---- sessions table ----
+const tbody = document.querySelector("#sessions-table tbody");
+DATA.top_sessions.forEach(s => {
+  const tr = document.createElement("tr");
+  const tdProject = document.createElement("td");
+  tdProject.textContent = s.project;
+  const tdCost = document.createElement("td");
+  tdCost.className = "tnum";
+  tdCost.textContent = fmtUsd(s.cost);
+  const tdMsgs = document.createElement("td");
+  tdMsgs.className = "tnum";
+  tdMsgs.textContent = s.msgs.toLocaleString();
+  const tdDur = document.createElement("td");
+  tdDur.className = "tnum";
+  tdDur.textContent = s.duration_h != null ? s.duration_h + " h" : "—";
+  const tdSide = document.createElement("td");
+  tdSide.className = "tnum";
+  tdSide.textContent = s.sidechain_cost > 0 ? fmtUsd(s.sidechain_cost) : "—";
+  tr.append(tdProject, tdCost, tdMsgs, tdDur, tdSide);
+  tbody.appendChild(tr);
+});
+
+// ---- daily trend chart (SVG bars + tooltip) ----
+(function () {
+  const svg = document.getElementById("trend-chart");
+  const tip = document.getElementById("trend-tip");
+  const daily = DATA.daily;
+  const W = 1000, H = 180, padL = 4, padR = 4, padT = 14, padB = 4;
+  const n = daily.length;
+  const gap = 3;
+  const barW = (W - padL - padR - gap * (n - 1)) / n;
+  const max = Math.max(...daily.map(d => d.cost));
+  const ns = "http://www.w3.org/2000/svg";
+
+  const gridColor = getComputedStyle(document.documentElement).getPropertyValue("--grid").trim() || "#e1e0d9";
+  for (let f = 0.25; f < 1; f += 0.25) {
+    const y = padT + (H - padT - padB) * (1 - f);
+    const line = document.createElementNS(ns, "line");
+    line.setAttribute("x1", padL); line.setAttribute("x2", W - padR);
+    line.setAttribute("y1", y); line.setAttribute("y2", y);
+    line.setAttribute("stroke", "var(--grid)");
+    line.setAttribute("stroke-width", "1");
+    svg.appendChild(line);
+  }
+
+  const maxIdx = daily.findIndex(d => d.cost === max);
+
+  daily.forEach((d, i) => {
+    const x = padL + i * (barW + gap);
+    const h = Math.max(1, (H - padT - padB) * (d.cost / max));
+    const y = H - padB - h;
+    const rect = document.createElementNS(ns, "rect");
+    rect.setAttribute("x", x.toFixed(2));
+    rect.setAttribute("y", y.toFixed(2));
+    rect.setAttribute("width", barW.toFixed(2));
+    rect.setAttribute("height", h.toFixed(2));
+    rect.setAttribute("rx", "2.5");
+    rect.setAttribute("fill", "var(--accent)");
+    rect.style.opacity = i === maxIdx ? "1" : "0.82";
+    rect.tabIndex = 0;
+    svg.appendChild(rect);
+
+    function showTip(evt) {
+      const wrapRect = svg.parentElement.getBoundingClientRect();
+      const barRect = rect.getBoundingClientRect();
+      tip.querySelector(".tt-val").textContent = fmtUsd(d.cost, d.cost < 10 ? 2 : 0);
+      tip.querySelector(".tt-date").textContent = d.date + " · " + d.msgs.toLocaleString() + " turns · " + d.prompts + " prompts";
+      tip.style.left = (barRect.left - wrapRect.left + barRect.width / 2) + "px";
+      tip.style.top = (barRect.top - wrapRect.top) + "px";
+      tip.style.opacity = "1";
+    }
+    function hideTip() { tip.style.opacity = "0"; }
+    rect.addEventListener("pointerenter", showTip);
+    rect.addEventListener("pointermove", showTip);
+    rect.addEventListener("pointerleave", hideTip);
+    rect.addEventListener("focus", showTip);
+    rect.addEventListener("blur", hideTip);
+  });
+
+  document.getElementById("trend-axis-note").innerHTML =
+    "<span>" + daily[0].date + "</span><span>peak: " + daily[maxIdx].date + ", " + fmtUsd(max) + "</span><span>" + daily[n - 1].date + "</span>";
+})();
+
+// ---- footer ----
+document.getElementById("footnote").innerHTML =
+  'Generated ' + new Date(DATA.meta.generated_at).toISOString().slice(0, 16).replace("T", " ") + ' UTC from ' +
+  DATA.meta.files_scanned + ' local <code>.jsonl</code> transcripts under <code>~/.claude/projects/</code>. ' +
+  'Costs use the API list prices in the token-audit pricing table (snapshot ' + DATA.meta.pricing_snapshot_date + '), ' +
+  'including subagent sub-transcripts. This is a usage proxy for relative comparison, not an invoice, ' +
+  'and it undercounts anything already summarized away by context compaction. ' + esc(DATA.meta.quota_note);
+</script>
