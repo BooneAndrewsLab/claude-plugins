@@ -8,7 +8,10 @@ Private Claude Code plugin marketplace for the Boone/Andrews labs
 
 ## Plugins
 
-- `usage-pacing`: weekly-quota pace alerts (WIP). Tracking issue (private):
+- `usage-pacing`: weekly-quota pace alerts.
+- `token-audit`: audit your local Claude Code token usage/cost and build a self-contained HTML dashboard
+  (`/token-audit`; `--anonymize` for a shareable version). Python 3 stdlib only. Costs are API-list-price
+  equivalents and do not match the weekly quota percentage. Tracking issue (private):
   https://github.com/BooneAndrewsLab/lab-work/issues/1
 
 ## usage-pacing

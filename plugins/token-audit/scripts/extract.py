@@ -24,7 +24,12 @@ SKIP_PATH_WORDS = {"home", "users", "code", "mnt", "storage", "src", "projects",
 SKIP_PATH_WORDS |= {p.lower() for p in os.path.expanduser("~").split(os.sep) if p}
 
 
+ANON = {}   # raw project dir -> "project-N" when --anonymize is given
+
+
 def label(name):
+    if ANON:
+        return ANON.get(name, "other")
     parts = [p for p in name.split("-") if p]
     kept = [p for p in parts if p.lower() not in SKIP_PATH_WORDS]
     return "-".join(kept) if kept else name
@@ -104,6 +109,9 @@ def main():
     if not os.path.exists(IN_PATH):
         sys.exit("missing %s -- run report.py first" % IN_PATH)
     d = json.load(open(IN_PATH))
+    if "--anonymize" in sys.argv[1:] or os.environ.get("TOKEN_AUDIT_ANONYMIZE"):
+        ranked = sorted(d["per_project"].items(), key=lambda kv: -kv[1]["cost"])
+        ANON.update({k: "project-%d" % (i + 1) for i, (k, _) in enumerate(ranked)})
 
     unpriced = {m: v for m, v in d.get("unpriced_models", {}).items()}
     for m in d["per_model"]:
@@ -151,7 +159,7 @@ def main():
 
     projects = []
     for k, v in d["per_project"].items():
-        projects.append(dict(name=label(k), raw=k, cost=round(v["cost"], 2), sessions=v["sessions"],
+        projects.append(dict(name=label(k), cost=round(v["cost"], 2), sessions=v["sessions"],
                              msgs=v["msgs"], prompts=v["prompts"],
                              ratio=round(v["msgs"] / v["prompts"], 1) if v["prompts"] else None))
     projects.sort(key=lambda p: -p["cost"])

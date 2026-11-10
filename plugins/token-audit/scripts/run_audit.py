@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Run the whole audit: report -> extract -> dashboard. Outputs go to
-$TOKEN_AUDIT_DIR or ~/.claude/token-audit/ (survives plugin updates)."""
+$TOKEN_AUDIT_DIR or ~/.claude/token-audit/ (survives plugin updates).
+Pass --anonymize to replace project names with project-1, project-2, ... (safe to share)."""
 import os
 import subprocess
 import sys
 
 here = os.path.dirname(os.path.abspath(__file__))
+flags = ["--anonymize"] if "--anonymize" in sys.argv[1:] else []   # project-1, project-2, ... for sharing
 for step in ("report.py", "extract.py", "build_dashboard.py"):
-    r = subprocess.run([sys.executable, os.path.join(here, step)])
+    r = subprocess.run([sys.executable, os.path.join(here, step)] + (flags if step == "extract.py" else []))
     if r.returncode:
         sys.exit("step %s failed" % step)
 

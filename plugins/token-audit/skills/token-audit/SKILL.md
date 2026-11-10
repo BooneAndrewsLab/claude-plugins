@@ -16,6 +16,8 @@ Nothing leaves the machine.
    python3 "${CLAUDE_SKILL_DIR}/../../scripts/run_audit.py"
    ```
 
+   If the dashboard is meant to be shared, add `--anonymize` (project names become `project-1`, `project-2`, ...;
+   `usage_summary.json` still holds raw names, so share only `dashboard.html`/`report_data.json`).
    It writes `usage_summary.json`, `report_data.json` and `dashboard.html` there and prints a summary.
 2. Relay the key numbers from the printed summary: period, total estimated cost, model mix,
    subagent share, session concentration, cache share, week over week.
