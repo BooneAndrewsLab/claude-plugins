@@ -39,4 +39,5 @@ If the user asks to set up (or pacing numbers are never available): run
 
 It adds the statusLine entry to `~/.claude/settings.json` (plugins cannot do this
 themselves) and refuses to overwrite an existing statusLine, printing how to chain it.
-Tell the user to restart Claude Code.
+Tell the user to restart Claude Code. Settings (display, alert channel, thresholds) live in
+`/plugin configure usage-pacing@boonelab-plugins`; the statusline is optional.

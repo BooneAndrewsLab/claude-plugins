@@ -1,5 +1,56 @@
 {
   "name": "usage-pacing",
-  "version": "0.1.0",
-  "description": "Soft alerts on weekly Claude quota usage vs a linear pace (statusline + hook + skill)."
+  "version": "0.2.0",
+  "description": "Soft alerts on weekly Claude quota usage vs a linear pace (statusline + hook + skill).",
+  "userConfig": {
+    "display": {
+      "type": "string",
+      "title": "Statusline display",
+      "description": "statusline: show 'wk N% / pace M%' in the status bar. silent: still track usage but draw nothing.",
+      "options": [
+        "statusline",
+        "silent"
+      ],
+      "default": "statusline"
+    },
+    "alert_channel": {
+      "type": "string",
+      "title": "Alert channel",
+      "description": "context: Claude relays a one-line alert in chat (works in remote sessions too). push: also asks Claude to send a mobile push (needs Remote Control + push enabled in /config). none: no alerts.",
+      "options": [
+        "context",
+        "push",
+        "none"
+      ],
+      "default": "context"
+    },
+    "over_pts": {
+      "type": "number",
+      "title": "Over-pace threshold (points)",
+      "description": "Alert when usage is at least this many percentage points above the linear pace.",
+      "default": 8,
+      "min": 1,
+      "max": 100
+    },
+    "under_pts": {
+      "type": "number",
+      "title": "Under-pace threshold (points)",
+      "description": "At session start, hint when usage is at least this many points below pace.",
+      "default": 20,
+      "min": 1,
+      "max": 100
+    },
+    "throttle_hours": {
+      "type": "number",
+      "title": "Min hours between alerts",
+      "description": "Minimum gap between injected alerts of the same kind.",
+      "default": 2,
+      "min": 0,
+      "max": 168
+    }
+  },
+  "author": {
+    "name": "Matej Usaj"
+  },
+  "license": "MIT"
 }
