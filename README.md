@@ -62,10 +62,16 @@ model, and writes `usage_summary.json`, `report_data.json` and a self-contained 
 - Costs are API-list-price equivalents from a dated pricing snapshot; unknown model IDs trigger a
   loud warning and a banner instead of silently counting as $0. They do not match the weekly quota
   percentage (quota is model-weighted).
-- Findings text is computed from the data.
+- Findings and tips are computed from the data. Tips are deterministic rules with thresholds (e.g. subagent
+  model mix, cache-write share, subagent starting context, long sessions); they are not personalised advice.
+  New metrics: subagent cost by model, starting-context size (median/p90), longest sessions.
 - `--anonymize` renames projects to `project-1`, `project-2`, ... so the dashboard can be shared
   (`usage_summary.json` still contains raw project names; share only the dashboard).
-- Nothing is published automatically; Claude only publishes the dashboard if you ask.
+- Options (`/plugin configure token-audit@boonelab-plugins`): `publish` = `always` (default) / `ask` / `never`,
+  and `anonymize` (default off; adds `--anonymize`). By default Claude publishes the dashboard as a **private
+  artifact** after each audit and gives you the link, so you do not need to find a local file; the URL is kept in
+  `~/.claude/token-audit/artifact_url` and reused for updates. The dashboard contains project names unless
+  anonymize is on. Set `publish` to `never` to keep it local only. Publishing is done by Claude, never by a script.
 - Python 3 standard library only.
 
 ## License

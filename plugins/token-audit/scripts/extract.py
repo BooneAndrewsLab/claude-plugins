@@ -14,6 +14,18 @@ DATA_DIR = pricing.data_dir()
 IN_PATH = os.path.join(DATA_DIR, "usage_summary.json")
 OUT_PATH = os.path.join(DATA_DIR, "report_data.json")
 
+# Tip thresholds (a tip fires only when the data crosses its threshold).
+TIP_SIDECHAIN_SHARE = 50.0          # % of total cost in subagents/forks
+TIP_SIDECHAIN_EXPENSIVE_SHARE = 30.0  # % of sidechain cost on opus/fable-family models
+EXPENSIVE_FAMILIES = ("opus", "fable")
+TIP_CACHE_WRITE_SHARE = 35.0        # % of total cost spent on cache writes
+TIP_SIDECHAIN_START_TOKENS = 20_000  # median first-turn context of subagents
+TIP_TOP_SESSIONS_SHARE = 30.0       # % of cost in the 8 costliest sessions
+TIP_LONG_SESSION_HOURS = 24.0
+TIP_EFFORT_MIN_SHARE = 20.0         # % of effort-tagged cost that counts as "notable"
+TIP_EFFORT_PER_TURN_RATIO = 2.0     # high per-turn cost / medium per-turn cost
+TIP_WOW_GROWTH = 30.0               # % week-over-week growth
+
 QUOTA_NOTE = ("Raw token counts and the dollar figures here do NOT map onto the weekly quota "
               "percentage shown by /usage: the quota is weighted by model, so the same tokens "
               "consume different amounts on different models. Dollars are API list-price "
@@ -105,6 +117,93 @@ def make_findings(d, out):
     return f
 
 
+def make_tips(out):
+    """Deterministic rules; each fires only when the data supports it.
+    Returns [{id, title, body, evidence}]; numbers are interpolated from the data."""
+    tips = []
+    m = out["meta"]
+    total = m["total_cost"]
+    if total <= 0:
+        return tips
+    sc = m["sidechain_cost"]
+    sc_share = pct(sc, total)
+    sbm = out.get("sidechain_by_model") or []
+    exp_cost = sum(x["cost"] for x in sbm if any(f in x["name"].lower() for f in EXPENSIVE_FAMILIES))
+    exp_share = pct(exp_cost, sc)
+    if sc_share > TIP_SIDECHAIN_SHARE and exp_share > TIP_SIDECHAIN_EXPENSIVE_SHARE:
+        tips.append(dict(
+            id="subagent-model",
+            title="Set an explicit model per subagent",
+            body="Subagents and forks are a large part of cost and much of it ran on the most expensive model "
+                 "family. Choosing haiku or sonnet explicitly for routine delegated work, and delegating fewer, "
+                 "larger tasks, may reduce this.",
+            evidence="Sidechain turns are %.0f%% of cost (%s); %.0f%% of sidechain cost is on opus/fable-family models (%s)."
+                     % (sc_share, usd(sc), exp_share, usd(exp_cost))))
+    cw = out["token_categories"]["cache_write"]
+    cw_share = pct(cw, total)
+    if cw_share > TIP_CACHE_WRITE_SHARE:
+        tips.append(dict(
+            id="cache-writes",
+            title="Cache writes are a large share of cost",
+            body="High cache-write cost can come from many fresh contexts (new sessions, many subagents) or from "
+                 "idle gaps long enough for the prompt cache to expire, so the context is written again. "
+                 "Batching related work and avoiding tiny subagents may help; this data does not show which cause applies.",
+            evidence="Cache writes cost %s, %.0f%% of total cost (write cost is approximated at the 5-minute rate)."
+                     % (usd(cw), cw_share)))
+    sctx = (m.get("start_context_tokens") or {}).get("sidechain") or {}
+    if sctx.get("median") and sctx["median"] > TIP_SIDECHAIN_START_TOKENS:
+        tips.append(dict(
+            id="start-context",
+            title="Subagents start with a large context",
+            body="Each subagent's first turn already carries a large fixed prefix. Hypothesis, not a finding: "
+                 "unused MCP servers, plugins or agent definitions inflate it. Check with /context in a fresh "
+                 "session and trim what you do not use.",
+            evidence="Median subagent starting context is %s tokens (p90 %s) across %s subagent starts."
+                     % (format(round(sctx["median"]), ","), format(round(sctx["p90"]), ","), format(sctx["n"], ","))))
+    ts = out["top_sessions"]
+    top_share = pct(sum(s["cost"] for s in ts), total)
+    ss = m.get("session_stats") or {}
+    long_n = ss.get("over_24h") or 0
+    if top_share > TIP_TOP_SESSIONS_SHARE or long_n > 0:
+        parts = []
+        if top_share > TIP_TOP_SESSIONS_SHARE:
+            parts.append("the %d costliest sessions are %.0f%% of cost" % (len(ts), top_share))
+        if long_n:
+            parts.append("%d session(s) spanned more than %d h (%.0f%% of cost; longest %.0f h)" % (
+                long_n, TIP_LONG_SESSION_HOURS, pct(ss["over_24h_cost"], total), ss["longest_hours"]))
+        tips.append(dict(
+            id="long-sessions",
+            title="Use /clear at breakpoints and keep handoff files",
+            body="Long sessions re-read their growing context every turn. Clearing when a sub-task is done and "
+                 "writing a short handoff file for what must carry over keeps later turns cheaper.",
+            evidence="; ".join(parts).capitalize() + "."))
+    eff = out["effort"]
+    if eff.get("high") and eff.get("medium") and eff["high"]["msgs"] and eff["medium"]["msgs"]:
+        tot_eff = sum(v["cost"] for v in eff.values())
+        h, md = eff["high"], eff["medium"]
+        hs = pct(h["cost"], tot_eff)
+        ratio = (h["cost"] / h["msgs"]) / (md["cost"] / md["msgs"]) if md["cost"] else 0
+        if hs > TIP_EFFORT_MIN_SHARE and ratio > TIP_EFFORT_PER_TURN_RATIO:
+            tips.append(dict(
+                id="high-effort",
+                title="Reserve high effort for work that needs it",
+                body="High-effort turns cost noticeably more per turn than medium. Part of that gap may come from "
+                     "which models and tasks get high effort rather than from effort itself, so treat the ratio as "
+                     "an upper bound.",
+                evidence="High effort is %.0f%% of effort-tagged cost at %s/turn vs %s/turn for medium (%.1fx)."
+                         % (hs, "$%.3f" % (h["cost"] / h["msgs"]), "$%.3f" % (md["cost"] / md["msgs"]), ratio)))
+    if out["prev7_cost"] > 0:
+        chg = pct(out["last7_cost"] - out["prev7_cost"], out["prev7_cost"])
+        if chg > TIP_WOW_GROWTH:
+            tips.append(dict(
+                id="growth",
+                title="Spend grew week over week (informational)",
+                body="Recent spend is well above the previous week. This may be a bigger workload rather than "
+                     "waste; the other tips show where to look if it is unexpected.",
+                evidence="Last 7 active days %s vs %s before (%+.0f%%)." % (usd(out["last7_cost"]), usd(out["prev7_cost"]), chg)))
+    return tips
+
+
 def main():
     if not os.path.exists(IN_PATH):
         sys.exit("missing %s -- run report.py first" % IN_PATH)
@@ -152,6 +251,8 @@ def main():
         unpriced_models=unpriced,
         quota_note=QUOTA_NOTE % pricing.PRICING_SNAPSHOT_DATE,
         thinking_fraction=(thinking / total_out) if total_out and thinking else None,
+        start_context_tokens=d.get("start_context_tokens"),
+        session_stats=d.get("session_stats"),
         tokens_by_model={m: dict(input=v["tokens_in"], output=v["tokens_out"],
                                  cache_read=v["cache_read"], cache_write=v["cache_write"])
                          for m, v in d["per_model"].items() if m not in IGNORED_MODELS},
@@ -200,7 +301,12 @@ def main():
         token_categories={k: round(v, 2) for k, v in cat.items()},
         effort=effort, top_sessions=top_sessions,
     )
+    out["sidechain_by_model"] = sorted(
+        (dict(name=k, cost=round(v["cost"], 2), msgs=v["msgs"])
+         for k, v in (d.get("sidechain_by_model") or {}).items() if k not in IGNORED_MODELS),
+        key=lambda x: -x["cost"])
     out["findings"] = make_findings(d, out)
+    out["tips"] = make_tips(out)
     json.dump(out, open(OUT_PATH, "w"), indent=2)
     print("wrote", OUT_PATH)
 

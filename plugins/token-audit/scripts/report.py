@@ -65,6 +65,8 @@ def main():
                                             sidechain_cost=0.0, first_ts=None, last_ts=None))
     effort_stats = defaultdict(lambda: dict(cost=0.0, msgs=0, tokens_out=0))
     sidechain_cost_total = 0.0
+    side_by_model = defaultdict(lambda: dict(cost=0.0, msgs=0))
+    first_turn = {}  # (path, is_side) -> (timestamp, starting-context tokens)
     mainchain_cost_total = 0.0
     total_cache_read = 0
     total_cache_write = 0
@@ -142,7 +144,15 @@ def main():
                                 ps["first_ts"] = ts
                             if ps["last_ts"] is None or ts > ps["last_ts"]:
                                 ps["last_ts"] = ts
+                        if ts:
+                            fk = (path, is_side)
+                            if fk not in first_turn or ts < first_turn[fk][0]:
+                                first_turn[fk] = (ts, (usage.get("input_tokens", 0) or 0)
+                                                  + (usage.get("cache_read_input_tokens", 0) or 0) + cw)
                         if is_side:
+                            sm = side_by_model[model]
+                            sm["cost"] += c
+                            sm["msgs"] += 1
                             ps["sidechain_cost"] += c
                             sidechain_cost_total += c
                         else:
@@ -191,6 +201,40 @@ def main():
 
     total_cost = sum(p["cost"] for p in per_project.values())
 
+    def quantile(vals, q):
+        vals = sorted(vals)
+        if not vals:
+            return None
+        i = (len(vals) - 1) * q
+        lo = int(i)
+        hi = min(lo + 1, len(vals) - 1)
+        return vals[lo] + (vals[hi] - vals[lo]) * (i - lo)
+
+    def ctx_summary(vals):
+        return dict(n=len(vals), median=quantile(vals, 0.5), p90=quantile(vals, 0.9))
+
+    start_ctx = dict(
+        main=ctx_summary([v[1] for k, v in first_turn.items() if not k[1]]),
+        sidechain=ctx_summary([v[1] for k, v in first_turn.items() if k[1]]),
+    )
+
+    durations = []  # (hours, cost) per session id
+    for v in per_session.values():
+        if v["first_ts"] and v["last_ts"]:
+            try:
+                t1 = datetime.fromisoformat(v["first_ts"].replace("Z", "+00:00"))
+                t2 = datetime.fromisoformat(v["last_ts"].replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            durations.append(((t2 - t1).total_seconds() / 3600, v["cost"]))
+    long_sessions = [(h, c) for h, c in durations if h > 24]
+    session_stats = dict(
+        sessions=len(durations),
+        longest_hours=max((h for h, _ in durations), default=None),
+        over_24h=len(long_sessions),
+        over_24h_cost=sum(c for _, c in long_sessions),
+    )
+
     out = dict(
         generated_at=datetime.now().isoformat(),
         files_scanned=len(files),
@@ -199,6 +243,9 @@ def main():
         total_cost_usd=total_cost,
         mainchain_cost_usd=mainchain_cost_total,
         sidechain_cost_usd=sidechain_cost_total,
+        sidechain_by_model=dict(side_by_model),
+        start_context_tokens=start_ctx,
+        session_stats=session_stats,
         total_cache_read_tokens=total_cache_read,
         total_cache_write_tokens=total_cache_write,
         total_noncache_input_tokens=total_input_noncache,

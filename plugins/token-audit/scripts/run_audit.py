@@ -26,6 +26,10 @@ print("Estimated API-list-price equivalent: $%s (pricing snapshot %s)" %
       (format(round(m["total_cost"]), ","), m["pricing_snapshot_date"]))
 for f in d["findings"]:
     print("- %s: %s" % (f["title"], f["body"]))
+if d.get("tips"):
+    print("Tips (computed rules, not personalised advice):")
+    for t in d["tips"]:
+        print("- %s: %s (%s)" % (t["title"], t["body"], t["evidence"]))
 if m["unpriced_models"]:
     print("WARNING: unknown model IDs priced at $0 (costs understated): " +
           ", ".join(sorted(m["unpriced_models"])))
