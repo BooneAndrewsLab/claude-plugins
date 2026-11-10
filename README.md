@@ -65,6 +65,9 @@ model, and writes `usage_summary.json`, `report_data.json` and a self-contained 
 - Findings and tips are computed from the data. Tips are deterministic rules with thresholds (e.g. subagent
   model mix, cache-write share, subagent starting context, long sessions); they are not personalised advice.
   New metrics: subagent cost by model, starting-context size (median/p90), longest sessions.
+- Families of tiny project dirs (10+ dirs sharing a name prefix, at most 2 sessions each, e.g. eval or temp
+  runs) are grouped into one row marked `×N` so they don't clutter the project list; detected from the data,
+  nothing hardcoded. Claude Code's per-agent worktree dirs are grouped with their parent project.
 - `--anonymize` renames projects to `project-1`, `project-2`, ... so the dashboard can be shared
   (`usage_summary.json` still contains raw project names; share only the dashboard).
 - Options (`/plugin configure token-audit@boonelab-plugins`): `publish` = `always` (default) / `ask` / `never`,
