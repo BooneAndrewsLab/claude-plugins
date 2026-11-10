@@ -29,8 +29,11 @@ substituted: use the defaults, publish = `always` and anonymize = `false`.
    - `ask`: ask the user once whether to publish, then follow `always` if yes.
    - `always`: publish without asking, but say what was published.
    - Remember the artifact URL in `~/.claude/token-audit/artifact_url` (plain text, one line; user data dir, never in a repo).
-     If it exists (and the user has not objected), read that artifact first, then republish to that URL with the
-     dashboard (copy `dashboard.html` into the session scratchpad if the tool requires it). Otherwise create a new
+     If it exists (and the user has not objected), republish to that URL with the dashboard. Do NOT read the
+     artifact first by default: a read dumps the whole page into the conversation. Only if the Artifact tool refuses
+     the publish because this session has not read or published that URL yet, read it once (the refusal may already
+     hand back the live version) and publish again; later runs in the same session need no read.
+     Copy `dashboard.html` into the session scratchpad if the tool requires it. If no URL is saved, create a new
      private artifact: title "Claude Code Usage Audit", icon "chart", a one-sentence description, label = plugin version + date;
      then write its URL to that file. Never hardcode a URL.
    - After publishing, call the Artifact `open` action only if the publish result did not already surface the
