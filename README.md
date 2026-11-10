@@ -8,7 +8,7 @@ Private Claude Code plugin marketplace for the Boone/Andrews labs
 
 ## Plugins
 
-- `usage-pacing`: weekly-quota pace alerts (WIP). Tracking issue:
+- `usage-pacing`: weekly-quota pace alerts (WIP). Tracking issue (private):
   https://github.com/BooneAndrewsLab/lab-work/issues/1
 
 ## usage-pacing
