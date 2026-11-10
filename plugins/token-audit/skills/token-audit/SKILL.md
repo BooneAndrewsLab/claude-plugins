@@ -11,6 +11,8 @@ Nothing leaves the machine.
 ## Steps
 
 Settings (plugin options): publish = `${user_config.publish}` (always / ask / never), anonymize = `${user_config.anonymize}`.
+If a value above still reads literally like `${user_config.…}` (the user never ran `/plugin configure`), it was not
+substituted: use the defaults, publish = `always` and anonymize = `false`.
 
 1. Run the pipeline (outputs go to `~/.claude/token-audit/`, or `$TOKEN_AUDIT_DIR`). If anonymize is `true`, add `--anonymize`
    (project names become `project-1`, `project-2`, ...; `usage_summary.json` still holds raw names, so only
