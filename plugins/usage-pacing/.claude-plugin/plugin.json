@@ -48,5 +48,9 @@
       "min": 0,
       "max": 168
     }
-  }
+  },
+  "author": {
+    "name": "Matej Usaj"
+  },
+  "license": "MIT"
 }
